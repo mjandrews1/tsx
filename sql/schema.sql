@@ -46,3 +46,12 @@ VALUES (
   2.0,
   20.0
 )$$
+
+
+-- headline-only news streams (no article body)
+INSERT INTO stream(stream_id, title, source_url, grain, active_cap_gb, archive_cap_gb)
+VALUES ('news.google', 'Google News WORLD (headlines only)', 'https://news.google.com/rss/headlines/section/topic/WORLD', 'event', 2.0, 20.0);
+INSERT INTO stream(stream_id, title, source_url, grain, active_cap_gb, archive_cap_gb)
+VALUES ('news.bbc', 'BBC World RSS (headlines only)', 'https://feeds.bbci.co.uk/news/world/rss.xml', 'event', 2.0, 20.0);
+INSERT INTO stream(stream_id, title, source_url, grain, active_cap_gb, archive_cap_gb)
+VALUES ('news.npr', 'NPR News RSS (headlines only)', 'https://feeds.npr.org/1004/rss.xml', 'event', 2.0, 20.0);
