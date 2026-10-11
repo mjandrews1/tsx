@@ -1,45 +1,37 @@
 #!/usr/bin/env python3
-"""Acquire headline-only news metadata from RSS/Atom.
+"""Headline-only news acquire — BBC + NPR only.
 
-**IP policy:** store date/time, title, source name, and URL only.
-Never store article body, snippets, or full text. URL points to the
-publisher; tsx is an index, not a content host.
+IP policy (private research streams):
+  Store **title + date + URL + source** only. Never body/description/media.
+  AP and Google News removed (2026-10-12) per IP/license policy.
 
-Feeds (examples):
-  google: https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en
-  bbc:    https://feeds.bbci.co.uk/news/world/rss.xml
-  npr:    https://feeds.npr.org/1004/rss.xml
-
-Usage:
-  news_rss.py [google|bbc|npr] [out.jsonl]
+Timestamps (all UTC ISO-8601):
+  ts_utc           — event/pub date from the feed (when known)
+  ts_reported_utc  — same as pub date when feed has no separate event time
+  ts_ingested_utc  — when we wrote the row
 """
 from __future__ import annotations
 
 import json
-import re
 import sys
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 FEEDS = {
-    "google": "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en",
     "bbc": "https://feeds.bbci.co.uk/news/world/rss.xml",
     "npr": "https://feeds.npr.org/1004/rss.xml",
 }
-
-# title/url/pubDate only — drop description/content
-DATE_TAGS = ("pubDate", "published", "updated", "date")
+ALLOWED = set(FEEDS)  # no ap, no google
 
 
 def parse_feed(xml_bytes: bytes, src: str):
     root = ET.fromstring(xml_bytes)
-    # RSS 2.0 item or Atom entry
     items = []
     for el in root.iter():
-        tag = el.tag.split("}")[-1].lower()
-        if tag not in ("item", "entry"):
+        if el.tag.split("}")[-1].lower() not in ("item", "entry"):
             continue
         title = link = date = ""
         for c in el:
@@ -57,44 +49,43 @@ def parse_feed(xml_bytes: bytes, src: str):
     return items
 
 
-def to_event(item, stream_id: str) -> dict:
-    # ISO-ish ts if possible
-    raw = item.get("date") or ""
-    ts = raw
+def iso_from(raw: str) -> str:
+    if not raw:
+        return ""
     try:
-        from email.utils import parsedate_to_datetime
-
         dt = parsedate_to_datetime(raw)
-        ts = dt.astimezone(timezone.utc).isoformat()
+        return dt.astimezone(timezone.utc).isoformat()
     except Exception:
-        pass
-    nat = item["url"]
-    return {
-        "nat_key": nat,
-        "ts_utc": ts,
-        "value": None,
-        "unit": "headline",
-        "title": item["title"],
-        "url": item["url"],
-        "place": item.get("src"),
-        "stream_id": stream_id,
-    }
+        return raw
 
 
 def main() -> int:
-    feed = sys.argv[1] if len(sys.argv) > 1 else "google"
-    if feed not in FEEDS:
-        print(f"usage: news_rss.py {{{'|'.join(FEEDS)}}} [out.jsonl]", file=sys.stderr)
+    feed = sys.argv[1] if len(sys.argv) > 1 else "bbc"
+    if feed not in ALLOWED:
+        print(f"allowed feeds: {sorted(ALLOWED)}", file=sys.stderr)
         return 2
     out = Path(sys.argv[2] if len(sys.argv) > 2 else f"news.{feed}.jsonl")
-    req = urllib.request.Request(FEEDS[feed], headers={"User-Agent": "tsx-news/0.1 (metadata-only)"})
+    req = urllib.request.Request(FEEDS[feed], headers={"User-Agent": "tsx-news/0.2 (title+link+date)"})
     with urllib.request.urlopen(req, timeout=60) as r:
         body = r.read()
-    items = parse_feed(body, feed)
+    now = datetime.now(timezone.utc).isoformat()
     n = 0
     with out.open("a", encoding="utf-8") as fh:
-        for it in items:
-            ev = to_event(it, f"news.{feed}")
+        for it in parse_feed(body, feed):
+            ts = iso_from(it["date"])
+            ev = {
+                "stream_id": f"news.{feed}",
+                "nat_key": it["url"],
+                "ts_utc": ts or now,
+                "ts_event_utc": ts,          # feed pub date (event/report)
+                "ts_reported_utc": ts,
+                "ts_ingested_utc": now,
+                "value": None,
+                "unit": "headline",
+                "title": it["title"],
+                "url": it["url"],
+                "place": it.get("src"),
+            }
             fh.write(json.dumps(ev, separators=(",", ":")) + "\n")
             n += 1
     print(json.dumps({"feed": feed, "headlines": n, "file": str(out), "policy": "title+url+date only"}))
