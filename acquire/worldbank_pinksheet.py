@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""World Bank Commodity Markets (Pink Sheet) — monthly price series.
+"""World Bank Commodity Markets (Pink Sheet) — monthly spot-style prices.
 
-License: CC BY 4.0 — attribution required. Cite source URL in every row.
-https://www.worldbank.org/en/research/commodity-markets
-Data: CMO-Historical-Data-Monthly.xlsx (prices & forecasts)
+License: **CC BY 4.0** — attribution required on every row.
+Source: https://www.worldbank.org/en/research/commodity-markets
+Workbook: CMO-Historical-Data-Monthly.xlsx → sheet **Monthly Prices**
 
-Policy: price observation date only + series code + value + source URL.
-No report body. Observation date is the 1st of the month, stored as UTC.
+Includes **fertilizers**: DAP, TSP, urea, phosphate rock, potash
+(spot descriptions in sheet Description / shared strings).
 
-Usage:
-  worldbank_pinksheet.py [out.jsonl]
+Policy: observation month → UTC; value + series name + source URL. No bodies.
 """
 from __future__ import annotations
 
@@ -17,6 +16,8 @@ import json
 import re
 import sys
 import urllib.request
+import zipfile
+import io
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,26 +28,28 @@ SOURCE_URL = (
 LANDING = "https://www.worldbank.org/en/research/commodity-markets"
 ATTRIB = "World Bank, Commodity Markets (Pink Sheet), CC BY 4.0"
 
+# fertilizer + energy + metals focus for tsx
+WANTED = re.compile(
+    r"urea|dap|tsp|phosphate|potash|potassium|fertil|crude|petroleum|brent|wti|coal|"
+    r"natural gas|copper|aluminum|aluminium|nickel|zinc|lead|tin|iron|gold|silver|"
+    r"platinum|palladium",
+    re.I,
+)
+
 
 def fetch(url: str) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "tsx-0.2 (pinksheet; +attribution)"})
+    req = urllib.request.Request(url, headers={"User-Agent": "tsx-0.3 (pinksheet; +attribution)"})
     with urllib.request.urlopen(req, timeout=120) as r:
         return r.read()
 
 
-def parse_xlsx(data: bytes):
-    """Minimal xlsx reader: first sheet, rows of (date_str, col_name -> value)."""
-    import io
-    import re
-    import zipfile
-
+def load_sheet(data: bytes, sheet_path: str = "xl/worksheets/sheet2.xml"):
     z = zipfile.ZipFile(io.BytesIO(data))
     shared = []
     if "xl/sharedStrings.xml" in z.namelist():
         ss = z.read("xl/sharedStrings.xml").decode("utf-8", "replace")
         shared = re.findall(r"<t[^>]*>(.*?)</t>", ss, re.S)
-    sheet = z.read("xl/worksheets/sheet1.xml").decode("utf-8", "replace")
-    # cell refs
+    sheet = z.read(sheet_path).decode("utf-8", "replace")
     rows = {}
     for m in re.finditer(r'<row[^>]*r="(\d+)"[^>]*>(.*?)</row>', sheet, re.S):
         rn = int(m.group(1))
@@ -55,41 +58,55 @@ def parse_xlsx(data: bytes):
             col, attrs, inner = cm.group(1), cm.group(3), cm.group(4)
             v = re.search(r"<v>(.*?)</v>", inner, re.S)
             val = v.group(1) if v else ""
-            if 't="s"' in attrs and val.isdigit():
-                val = shared[int(val)] if int(val) < len(shared) else val
+            if 't="s"' in attrs and val.isdigit() and int(val) < len(shared):
+                val = shared[int(val)]
             cells[col] = val
         rows[rn] = cells
     return rows
 
 
+def month_to_utc(period: str) -> str:
+    """2020M09 or 2020-09 or 2020 -> UTC ISO on the 1st."""
+    period = str(period).strip()
+    m = re.match(r"^(\d{4})M(\d{2})$", period)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-01T00:00:00+00:00"
+    m = re.match(r"^(\d{4})-(\d{2})$", period)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-01T00:00:00+00:00"
+    m = re.match(r"^(\d{4})$", period)
+    if m:
+        return f"{m.group(1)}-01-01T00:00:00+00:00"
+    return ""
+
+
 def main() -> int:
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "wb.pinksheet.jsonl")
-    raw = fetch(SOURCE_URL)
-    rows = parse_xlsx(raw)
+    rows = load_sheet(fetch(SOURCE_URL))
     if not rows:
-        print("no rows parsed", file=sys.stderr)
+        print("no rows", file=sys.stderr)
         return 1
-    # header at row 4 typically: month, CRUDE_PETRO, ...
-    header = rows.get(4) or rows.get(3) or {}
-    cols = {c: name for c, name in header.items() if name and c != "A"}
+    # header row: find row whose A is 'Period' or first multi-col row
+    header = {}
+    for rn in sorted(rows):
+        cells = rows[rn]
+        if len(cells) >= 3 and any("commod" in str(v).lower() or v == "Period" for v in cells.values()):
+            header = cells
+            header_rn = rn
+            break
+    if not header:
+        header = rows[min(rows)]
+        header_rn = min(rows)
+    cols = {c: str(v).strip() for c, v in header.items() if c != "A" and v}
     now = datetime.now(timezone.utc).isoformat()
-    n = 0
+    n = fert = 0
     with out.open("a", encoding="utf-8") as fh:
         for rn, cells in sorted(rows.items()):
-            date_s = cells.get("A", "")
-            if not date_s or not re.match(r"^(19|20)\d{2}", str(date_s)):
+            if rn <= header_rn:
                 continue
-            # Excel serial or YYYY or YYYY-MM
-            s = str(date_s)
-            if re.match(r"^\d{5}(\.\d+)?$", s):
-                # excel serial -> date
-                serial = int(float(s))
-                ts = datetime(1899, 12, 30, tzinfo=timezone.utc).fromtimestamp(
-                    (serial - 25569) * 86400, tz=timezone.utc
-                ).isoformat()
-            else:
-                ym = s.split("-")[0]
-                ts = f"{ym}-01-01T00:00:00+00:00" if len(s) <= 7 else s
+            ts = month_to_utc(cells.get("A", ""))
+            if not ts:
+                continue
             for col, name in cols.items():
                 val = cells.get(col, "")
                 if val in ("", "..", "..."):
@@ -98,10 +115,11 @@ def main() -> int:
                     fv = float(val)
                 except Exception:
                     continue
-                key = f"wb.pinksheet|{name}|{ts[:7]}"
+                if not WANTED.search(name):
+                    continue
                 ev = {
                     "stream_id": "px.wb.pinksheet",
-                    "nat_key": key,
+                    "nat_key": f"wb.pinksheet|{name}|{ts[:7]}",
                     "ts_utc": ts,
                     "ts_event_utc": ts,
                     "ts_reported_utc": now,
@@ -111,16 +129,16 @@ def main() -> int:
                     "title": name,
                     "url": SOURCE_URL,
                     "place": LANDING,
+                    "attrib": ATTRIB,
                 }
                 fh.write(json.dumps(ev, separators=(",", ":")) + "\n")
                 n += 1
+                if re.search(r"urea|dap|tsp|phosphate|potash|potassium|fertil", name, re.I):
+                    fert += 1
     print(json.dumps({
-        "stream": "px.wb.pinksheet",
-        "rows": n,
-        "file": str(out),
-        "source": SOURCE_URL,
-        "attribution": ATTRIB,
-        "license": "CC BY 4.0",
+        "stream": "px.wb.pinksheet", "rows": n, "fertilizer_rows": fert,
+        "series_cols": len(cols), "file": str(out), "license": "CC BY 4.0",
+        "attribution": ATTRIB, "source": SOURCE_URL,
     }))
     return 0
 
