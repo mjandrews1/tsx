@@ -1,57 +1,56 @@
--- tsx Comdb2 schema (demo: USGS earthquakes)
--- Apply on U01 primary; replicate to U02.
+-- tsx schema for Comdb2 testdb (U01)
+-- Comdb2 notes: INTEGER PRIMARY KEY only; CREATE INDEX / UNIQUE / composite PK
+-- rejected here (dyns_load_schema_string). Use tsx_nat_index / tsx_timebucket
+-- as lookup/correlation tables instead of secondary indexes.
 
-CREATE TABLE stream (
-  stream_id      VARCHAR(32)  NOT NULL,
-  title          VARCHAR(128) NOT NULL,
-  source_url     VARCHAR(512) NOT NULL,
-  grain          VARCHAR(16)  NOT NULL,
-  active_cap_gb  DECIMAL(6,2) NOT NULL DEFAULT 2.0,
-  archive_cap_gb DECIMAL(6,2) NOT NULL DEFAULT 20.0,
-  created_at     DATETIME     DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (stream_id)
-)$$
+CREATE TABLE tsx_stream (
+  id INTEGER PRIMARY KEY,
+  stream_id TEXT,
+  title TEXT,
+  source_url TEXT,
+  grain TEXT,
+  active_cap_gb REAL,
+  archive_cap_gb REAL
+);
 
-CREATE TABLE series (
-  series_id  BIGINT       NOT NULL,
-  stream_id  VARCHAR(32)  NOT NULL,
-  code       VARCHAR(64)  NOT NULL,
-  title      VARCHAR(128),
-  PRIMARY KEY (series_id)
-)$$
+CREATE TABLE tsx_series (
+  id INTEGER PRIMARY KEY,
+  stream_id TEXT,
+  code TEXT,
+  title TEXT
+);
 
-CREATE INDEX series_stream_code ON series(stream_id, code)$$
+CREATE TABLE tsx_observation (
+  id INTEGER PRIMARY KEY,
+  stream_id TEXT,
+  series_id INTEGER,
+  ts_utc TEXT,
+  ingested_at TEXT,
+  nat_key TEXT,
+  value REAL,
+  unit TEXT,
+  payload_json TEXT
+);
 
-CREATE TABLE observation (
-  stream_id    VARCHAR(32)  NOT NULL,
-  series_id    BIGINT       NOT NULL,
-  ts_utc       DATETIME     NOT NULL,
-  ingested_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
-  nat_key      VARCHAR(64)  NOT NULL,
-  value        DOUBLE,
-  unit         VARCHAR(16),
-  payload_json VARCHAR(8000),
-  PRIMARY KEY (stream_id, nat_key)
-)$$
+CREATE TABLE tsx_nat_index (
+  id INTEGER PRIMARY KEY,
+  stream_id TEXT,
+  nat_key TEXT,
+  obs_id INTEGER
+);
 
-CREATE INDEX obs_stream_ts ON observation(stream_id, ts_utc)$$
-CREATE INDEX obs_series_ts ON observation(series_id, ts_utc)$$
+CREATE TABLE tsx_timebucket (
+  id INTEGER PRIMARY KEY,
+  bucket_utc TEXT,
+  stream_id TEXT,
+  nat_key TEXT,
+  ts_utc TEXT,
+  value REAL
+);
 
-INSERT INTO stream(stream_id, title, source_url, grain, active_cap_gb, archive_cap_gb)
-VALUES (
-  'eq.usgs',
-  'USGS Earthquakes',
-  'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson',
-  'event',
-  2.0,
-  20.0
-)$$
-
-
--- headline-only news streams (no article body)
-INSERT INTO stream(stream_id, title, source_url, grain, active_cap_gb, archive_cap_gb)
-VALUES ('news.google', 'Google News WORLD (headlines only)', 'https://news.google.com/rss/headlines/section/topic/WORLD', 'event', 2.0, 20.0);
-INSERT INTO stream(stream_id, title, source_url, grain, active_cap_gb, archive_cap_gb)
-VALUES ('news.bbc', 'BBC World RSS (headlines only)', 'https://feeds.bbci.co.uk/news/world/rss.xml', 'event', 2.0, 20.0);
-INSERT INTO stream(stream_id, title, source_url, grain, active_cap_gb, archive_cap_gb)
-VALUES ('news.npr', 'NPR News RSS (headlines only)', 'https://feeds.npr.org/1004/rss.xml', 'event', 2.0, 20.0);
+CREATE TABLE tsx_lookup (
+  id INTEGER PRIMARY KEY,
+  stream_id TEXT,
+  nat_key TEXT,
+  obs_id INTEGER
+);
