@@ -1,0 +1,10 @@
+[Unit]
+Description=tsx USGS earthquake acquire
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=mark
+Environment=TSX_ROOT=/home/mark/tsx
+Environment=TSX_STAGE=/home/mark/tsx-staging
+ExecStart=/home/mark/tsx/cron/usgs-day.sh
