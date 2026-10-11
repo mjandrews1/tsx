@@ -86,18 +86,21 @@ def main() -> int:
     if not rows:
         print("no rows", file=sys.stderr)
         return 1
-    # header row: find row whose A is 'Period' or first multi-col row
+    # Monthly Prices: row 5 has series names in C+; row 6 units; data from row 7
     header = {}
+    header_rn = 0
     for rn in sorted(rows):
         cells = rows[rn]
-        if len(cells) >= 3 and any("commod" in str(v).lower() or v == "Period" for v in cells.values()):
+        # first row with several string labels in C+ and no A date
+        labels = [v for c, v in cells.items() if c != "A" and isinstance(v, str) and v and not v.startswith("$") and not re.match(r"^\(", v)]
+        if len(labels) >= 5:
             header = cells
             header_rn = rn
             break
     if not header:
-        header = rows[min(rows)]
-        header_rn = min(rows)
-    cols = {c: str(v).strip() for c, v in header.items() if c != "A" and v}
+        print("header not found", file=sys.stderr)
+        return 1
+    cols = {c: str(v).strip() for c, v in header.items() if c not in ("A", "B") and v}
     now = datetime.now(timezone.utc).isoformat()
     n = fert = 0
     with out.open("a", encoding="utf-8") as fh:
