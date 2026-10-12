@@ -51,11 +51,16 @@ def main() -> int:
     ]
     for oid, sid, nat, ts, val, unit, bucket in obs:
         v = "NULL" if val is None else str(val)
+        h = hid(sid, nat)
+        # idempotent: skip insert if this id already exists (prior run / copycomdb2)
+        have = q(f"SELECT id FROM tsx_observation WHERE id={oid}")
+        if f"id={oid}" in (have.stdout or ""):
+            check(f"seed obs {oid}", True, "already present")
+            continue
         r = q(
             f"INSERT INTO tsx_observation(id, stream_id, series_id, ts_utc, ingested_at, nat_key, value, unit, payload_json) "
             f"VALUES ({oid}, '{sid}', 0, '{ts}', '2026-10-11T22:00:00+00:00', '{nat}', {v}, '{unit}', 'test')"
         )
-        h = hid(sid, nat)
         q(f"INSERT INTO tsx_nat_index(id, stream_id, nat_key, obs_id) VALUES ({h}, '{sid}', '{nat}', {oid})")
         q(
             f"INSERT INTO tsx_timebucket(id, bucket_utc, stream_id, nat_key, ts_utc, value) "
