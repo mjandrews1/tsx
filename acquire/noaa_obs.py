@@ -33,13 +33,12 @@ STATIONS = [
 ]
 STATIONS = list(dict.fromkeys(STATIONS))
 UA = "tsx-geodata/0.1 (+tsx research; contact: mark@local)"
+from nws_fetch import fetch_json  # noqa: E402
 FEED = "https://api.weather.gov/stations/{st}/observations?limit=16"
 
 
 def fetch(url: str) -> dict:
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/geo+json"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.loads(r.read().decode("utf-8", "replace"))
+    return fetch_json(url)
 
 
 def main() -> int:
