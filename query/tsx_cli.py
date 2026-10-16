@@ -5,7 +5,7 @@ Usage:
   tsx_cli.py last [stream]
   tsx_cli.py stats
   tsx_cli.py hourly [stream]
-  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py count
+  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py count
   tsx_cli.py sql "SELECT ..."
   tsx_cli.py caps
 """
@@ -70,6 +70,19 @@ def main(argv: list[str]) -> int:
                 f"WHERE station='noaa|{station}' ORDER BY hour_utc DESC LIMIT 24"
             )
         return run_sql("SELECT * FROM v_hourly_wx ORDER BY hour_utc DESC LIMIT 30")
+    if cmd == "alerts":
+        area = argv[1] if len(argv) > 1 else ""
+        if area:
+            return run_sql(
+                "SELECT ts_utc, value AS sev, substr(payload_json,1,100) AS info FROM tsx_observation "
+                f"WHERE stream_id='wx.noaa.alerts' AND place LIKE '%{area}%' "
+                "ORDER BY ts_utc DESC LIMIT 20"
+            )
+        return run_sql(
+            "SELECT ts_utc, value AS sev, substr(payload_json,1,100) AS info "
+            "FROM tsx_observation WHERE stream_id='wx.noaa.alerts' "
+            "ORDER BY ts_utc DESC LIMIT 20"
+        )
     if cmd == "caps":
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return subprocess.call(["bash", os.path.join(root, "tools", "cap_check.sh")])

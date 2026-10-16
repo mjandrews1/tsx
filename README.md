@@ -80,3 +80,14 @@ Second stream **wx.noaa** (plus px.wb.pinksheet, news.bbc) validates the catalog
 | Nightly >90d export | cron `27 3 * * *` + `archive_cdb2.py` |
 | Delete after export | same job; caps `tools/cap_check.sh` |
 | Replay test | `replay_archive.py --verify` (18,099 archived rows) |
+
+
+## wx.noaa.alerts (tsx#8)
+
+```bash
+bash load/run_alerts.sh          # acquire NWS active alerts + load
+python3 query/tsx_cli.py alerts  # recent
+python3 query/tsx_cli.py alerts Flood
+```
+
+Optional cron: `*/15 * * * * bash /home/mark/tsx/load/run_alerts.sh >> /home/mark/tsx/load.log 2>&1`
