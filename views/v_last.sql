@@ -75,3 +75,15 @@ SELECT substr(nat_key, 1, 9) AS station,
 FROM tsx_observation
 WHERE stream_id = 'wx.noaa.meta'
 GROUP BY substr(nat_key, 1, 9);
+
+CREATE VIEW v_daily_wx AS
+SELECT substr(nat_key, 1, 9) AS station,
+       substr(ts_utc, 1, 10) AS day,
+       MIN(CASE WHEN nat_key NOT LIKE '%|w|%' AND nat_key NOT LIKE '%|p|%' AND nat_key NOT LIKE '%|h|%' AND nat_key NOT LIKE '%|d|%' THEN value END) AS min_c,
+       AVG(CASE WHEN nat_key NOT LIKE '%|w|%' AND nat_key NOT LIKE '%|p|%' AND nat_key NOT LIKE '%|h|%' AND nat_key NOT LIKE '%|d|%' THEN value END) AS avg_c,
+       MAX(CASE WHEN nat_key NOT LIKE '%|w|%' AND nat_key NOT LIKE '%|p|%' AND nat_key NOT LIKE '%|h|%' AND nat_key NOT LIKE '%|d|%' THEN value END) AS max_c,
+       MAX(CASE WHEN nat_key LIKE '%|w|%' THEN value END) AS max_wind_mps,
+       AVG(CASE WHEN nat_key LIKE '%|h|%' THEN value END) AS avg_rh
+FROM tsx_observation
+WHERE stream_id = 'wx.noaa'
+GROUP BY substr(nat_key, 1, 9), substr(ts_utc, 1, 10);

@@ -5,7 +5,7 @@ Usage:
   tsx_cli.py last [stream]
   tsx_cli.py stats
   tsx_cli.py hourly [stream]
-  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py wxnow\n  tsx_cli.py export <stream> [file]\n  tsx_cli.py export-all [dir]\n  tsx_cli.py near <lat> <lon>\n  tsx_cli.py compare ST1 ST2\n  tsx_cli.py alerts-near <lat> <lon> [km]\n  tsx_cli.py alerts [--severe] [area]\n  tsx_cli.py count
+  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py wxnow\n  tsx_cli.py export <stream> [file]\n  tsx_cli.py export-all [dir]\n  tsx_cli.py near <lat> <lon>\n  tsx_cli.py compare ST1 ST2\n  tsx_cli.py wxrollup [station]\n  tsx_cli.py alerts-near <lat> <lon> [km]\n  tsx_cli.py alerts [--severe] [area]\n  tsx_cli.py count
   tsx_cli.py sql "SELECT ..."
   tsx_cli.py caps
 """
@@ -451,6 +451,15 @@ def main(argv: list[str]) -> int:
                 print("wrote", path)
         print(f"EXPORT-ALL streams={total} dir={outdir}")
         return 0
+    if cmd == "wxrollup":
+        station = argv[1] if len(argv) > 1 else ""
+        if station:
+            return run_sql(
+                "SELECT day, min_c, avg_c, max_c, max_wind_mps, avg_rh "
+                "FROM v_daily_wx WHERE station='noaa|" + station + "' "
+                "ORDER BY day DESC LIMIT 14"
+            )
+        return run_sql("SELECT * FROM v_daily_wx ORDER BY day DESC, station LIMIT 30")
     if cmd == "caps":
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return subprocess.call(["bash", os.path.join(root, "tools", "cap_check.sh")])

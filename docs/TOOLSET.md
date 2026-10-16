@@ -14,3 +14,18 @@
 | CI | Actions: syntax + dry-run acquire + cap_check | |
 
 **Skip in v0:** Kafka, k8s, Influx/Timescale (Comdb2 is the store), big BI.
+
+
+## tsx CLI (wx / terminal surface)
+
+| Command | Purpose |
+|---------|---------|
+| `last / stats / hourly / count / sql` | core SQL |
+| `wx / wxnow / wxday / wxhourly / wxextremes` | obs board & series |
+| `wxfeels / compare / correlate` | feel-like & compare |
+| `stations / near / wxrollup` | meta & daily rollup |
+| `alerts [filter] / alerts --severe / alerts-near` | NWS alerts |
+| `export / export-all / caps` | dumps & caps |
+| `help` | this list |
+
+Views: `v_last*`, `v_stats*`, `v_hourly_wx`, `v_daily_wx`, `v_stations`, `v_stream`, `v_series`.
