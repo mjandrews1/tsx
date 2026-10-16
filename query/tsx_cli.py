@@ -5,7 +5,7 @@ Usage:
   tsx_cli.py last [stream]
   tsx_cli.py stats
   tsx_cli.py hourly [stream]
-  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py count
+  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py count
   tsx_cli.py sql "SELECT ..."
   tsx_cli.py caps
 """
@@ -17,6 +17,12 @@ import sys
 
 CDB2 = "/opt/bb/bin/cdb2sql"
 DB = os.environ.get("TSX_DB", "testdb")
+
+
+def run_sql_capture(sql: str) -> str:
+    bin_path = CDB2 if os.path.isfile(CDB2) else "cdb2sql"
+    r = subprocess.run([bin_path, DB, "local", sql], capture_output=True, text=True)
+    return (r.stdout or "") + (r.stderr or "")
 
 
 def run_sql(sql: str) -> int:
@@ -111,6 +117,57 @@ def main(argv: list[str]) -> int:
             f"AND ts_utc >= '{cut}' "
             "GROUP BY substr(nat_key,1,9) ORDER BY station"
         )
+    if cmd == "wxfeels":
+        station = argv[1] if len(argv) > 1 else "KLGA"
+        # last temp / wind / rh for station
+        sql = (
+            "SELECT MAX(CASE WHEN nat_key NOT LIKE '%|w|%' AND nat_key NOT LIKE '%|p|%' "
+            "AND nat_key NOT LIKE '%|h|%' AND nat_key NOT LIKE '%|d|%' THEN value END) AS t_c, "
+            "MAX(CASE WHEN nat_key LIKE '%|w|%' THEN value END) AS wind_mps, "
+            "MAX(CASE WHEN nat_key LIKE '%|h|%' THEN value END) AS rh "
+            "FROM tsx_observation WHERE stream_id='wx.noaa' "
+            f"AND nat_key LIKE 'noaa|{station}|%'"
+        )
+        # parse one-line result
+        import re
+        raw = run_sql_capture(sql)
+        m = re.search(r"t_c=([^,\)]+), wind_mps=([^,\)]+), rh=([^\)]+)", raw)
+        if not m:
+            print(raw or "no data")
+            return 0
+        def num(x):
+            x = x.strip().strip("'")
+            if x in ("NULL", "null", ""):
+                return None
+            try:
+                return float(x)
+            except ValueError:
+                return None
+        t, w, rh = num(m.group(1)), num(m.group(2)), num(m.group(3))
+        if t is None:
+            print("no temperature")
+            return 0
+        feels, how = t, "ambient"
+        if t >= 27 and rh is not None and rh >= 40:
+            # NWS Rothfusz regression (T in F)
+            tf = t * 9 / 5 + 32
+            hi_f = (
+                -42.379 + 2.04901523 * tf + 10.14333127 * rh
+                - 0.22475541 * tf * rh - 0.00683783 * tf * tf
+                - 0.05481717 * rh * rh + 0.00122874 * tf * tf * rh
+                + 0.00085282 * tf * rh * rh
+                - 0.00000199 * tf * tf * rh * rh
+            )
+            feels = (hi_f - 32) * 5 / 9
+            how = "heat_index"
+        elif t <= 10 and w is not None and w >= 4.8:
+            # wind chill needs wind in km/h
+            v = w * 3.6
+            feels = (13.12 + 0.6215 * t - 11.37 * (v ** 0.16) + 0.3965 * t * (v ** 0.16))
+            how = "wind_chill"
+        print(f"{station}  temp={t:.1f}C  feels={feels:.1f}C  ({how})"
+              f"  wind={w if w is not None else 'n/a'} m/s  rh={rh if rh is not None else 'n/a'}")
+        return 0
     if cmd == "caps":
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return subprocess.call(["bash", os.path.join(root, "tools", "cap_check.sh")])
