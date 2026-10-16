@@ -388,6 +388,50 @@ def main(argv: list[str]) -> int:
                     break
         print(f"alerts-near matched={hit}")
         return 0
+    if cmd == "correlate":
+        import math
+        if len(argv) < 3:
+            print("usage: correlate ST1 ST2", file=sys.stderr)
+            return 2
+        st1, st2 = argv[1], argv[2]
+        def series(st):
+            raw = run_sql_capture(
+                "SELECT hour_utc, avg_c FROM v_hourly_wx WHERE station='noaa|" + st + "' "
+                "AND avg_c IS NOT NULL ORDER BY hour_utc"
+            )
+            out = {}
+            for line in raw.splitlines():
+                if "hour_utc=" not in line:
+                    continue
+                fields = {}
+                for part in line.strip().strip("()").split(", "):
+                    if "=" in part:
+                        k, v = part.split("=", 1)
+                        fields[k.strip()] = v.strip().strip("'")
+                try:
+                    out[fields["hour_utc"]] = float(fields.get("avg_c") or 0)
+                except Exception:
+                    pass
+            return out
+        a, b = series(st1), series(st2)
+        keys = sorted(set(a) & set(b))
+        n = len(keys)
+        if n < 2:
+            print(f"correlate {st1} {st2} n={n} (insufficient overlap)")
+            return 0
+        xs = [a[k] for k in keys]
+        ys = [b[k] for k in keys]
+        mx = sum(xs) / n
+        my = sum(ys) / n
+        num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+        dx = math.sqrt(sum((x - mx) ** 2 for x in xs))
+        dy = math.sqrt(sum((y - my) ** 2 for y in ys))
+        r = num / (dx * dy) if dx and dy else 0.0
+        print(f"correlate {st1} vs {st2}  pearson_r={r:.4f}  n={n} hours")
+        return 0
+    if cmd == "help" or cmd == "-h" or cmd == "--help":
+        print(__doc__)
+        return 0
     if cmd == "caps":
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return subprocess.call(["bash", os.path.join(root, "tools", "cap_check.sh")])
