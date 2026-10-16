@@ -6,7 +6,11 @@ ARCHIVE_CAP_GB="${ARCHIVE_CAP_GB:-20}"
 # Default archive path: U02 coldstore when run there
 ARCHIVE_DIR="${ARCHIVE_DIR:-$HOME/coldstore/tsx}"
 # Optional: Comdb2 db dir (when measuring "active")
+# Default to Comdb2 db dir when present (U01/U02)
 ACTIVE_DIR="${ACTIVE_DIR:-}"
+if [ -z "$ACTIVE_DIR" ] && [ -d "$HOME/db" ]; then
+  ACTIVE_DIR="$HOME/db"
+fi
 
 fail=0
 echo "tsx cap check $(date -u +%Y-%m-%dT%H:%M:%SZ)"

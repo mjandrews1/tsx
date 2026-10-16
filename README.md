@@ -70,3 +70,13 @@ python3 query/tsx_cli.py sql "SELECT stream_id, COUNT(*) FROM tsx_observation GR
 ```
 
 Second stream **wx.noaa** (plus px.wb.pinksheet, news.bbc) validates the catalog model.
+
+
+## Replica + archive (tsx#2) — P1 complete 2026-10-16
+
+| Check | Evidence |
+|-------|----------|
+| U02 Comdb2 replica | U01/U02 `testdb` counts match (3,917) |
+| Nightly >90d export | cron `27 3 * * *` + `archive_cdb2.py` |
+| Delete after export | same job; caps `tools/cap_check.sh` |
+| Replay test | `replay_archive.py --verify` (18,099 archived rows) |
