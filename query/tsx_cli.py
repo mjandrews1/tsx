@@ -5,7 +5,7 @@ Usage:
   tsx_cli.py last [stream]
   tsx_cli.py stats
   tsx_cli.py hourly [stream]
-  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py wxnow\n  tsx_cli.py export <stream> [file]\n  tsx_cli.py near <lat> <lon>\n  tsx_cli.py alerts [--severe] [area]\n  tsx_cli.py count
+  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py wxnow\n  tsx_cli.py export <stream> [file]\n  tsx_cli.py near <lat> <lon>\n  tsx_cli.py compare ST1 ST2\n  tsx_cli.py alerts [--severe] [area]\n  tsx_cli.py count
   tsx_cli.py sql "SELECT ..."
   tsx_cli.py caps
 """
@@ -14,6 +14,9 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from wx_math import feels_like, haversine_km  # noqa: E402
 
 CDB2 = "/opt/bb/bin/cdb2sql"
 DB = os.environ.get("TSX_DB", "testdb")
@@ -298,6 +301,47 @@ def main(argv: list[str]) -> int:
         print(f"{'ST':6} {'km':>8} {'lat':>8} {'lon':>8}")
         for d, st, la, lo in rows[:10]:
             print(f"{st:6} {d:8.1f} {la:8.3f} {lo:8.3f}")
+        return 0
+    if cmd == "compare":
+        if len(argv) < 3:
+            print("usage: compare ST1 ST2", file=sys.stderr)
+            return 2
+        st1, st2 = argv[1], argv[2]
+        def latest(st):
+            raw = run_sql_capture(
+                "SELECT MAX(CASE WHEN nat_key NOT LIKE '%|w|%' AND nat_key NOT LIKE '%|p|%' "
+                "AND nat_key NOT LIKE '%|h|%' AND nat_key NOT LIKE '%|d|%' THEN value END) AS t_c, "
+                "MAX(CASE WHEN nat_key LIKE '%|w|%' THEN value END) AS wind_mps, "
+                "MAX(CASE WHEN nat_key LIKE '%|h|%' THEN value END) AS rh "
+                f"FROM tsx_observation WHERE stream_id='wx.noaa' AND nat_key LIKE 'noaa|{st}|%'"
+            )
+            import re
+            m = re.search(r"t_c=([^,\)]+), wind_mps=([^,\)]+), rh=([^\)]+)", raw)
+            if not m:
+                return None
+            def num(x):
+                x = x.strip().strip("'")
+                return None if x in ("NULL", "null", "") else float(x)
+            return num(m.group(1)), num(m.group(2)), num(m.group(3))
+        a, b = latest(st1), latest(st2)
+        print(f"{'':8} {st1:>8} {st2:>8}")
+        for label, idx in (("temp C", 0), ("wind m/s", 1), ("RH %", 2)):
+            av = a[idx] if a else None
+            bv = b[idx] if b else None
+            fa = f"{av:.1f}" if av is not None else "-"
+            fb = f"{bv:.1f}" if bv is not None else "-"
+            print(f"{label:8} {fa:>8} {fb:>8}")
+        if a:
+            f, _ = feels_like(a[0], a[1], a[2])
+            fa = f"{f:.1f}" if f is not None else "-"
+        else:
+            fa = "-"
+        if b:
+            f, _ = feels_like(b[0], b[1], b[2])
+            fb = f"{f:.1f}" if f is not None else "-"
+        else:
+            fb = "-"
+        print(f"{'feels':8} {fa:>8} {fb:>8}")
         return 0
     if cmd == "caps":
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
