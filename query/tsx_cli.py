@@ -5,7 +5,7 @@ Usage:
   tsx_cli.py last [stream]
   tsx_cli.py stats
   tsx_cli.py hourly [stream]
-  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py wxnow\n  tsx_cli.py export <stream> [file]\n  tsx_cli.py near <lat> <lon>\n  tsx_cli.py compare ST1 ST2\n  tsx_cli.py alerts [--severe] [area]\n  tsx_cli.py count
+  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py wxnow\n  tsx_cli.py export <stream> [file]\n  tsx_cli.py near <lat> <lon>\n  tsx_cli.py compare ST1 ST2\n  tsx_cli.py alerts-near <lat> <lon> [km]\n  tsx_cli.py alerts [--severe] [area]\n  tsx_cli.py count
   tsx_cli.py sql "SELECT ..."
   tsx_cli.py caps
 """
@@ -154,24 +154,7 @@ def main(argv: list[str]) -> int:
         if t is None:
             print("no temperature")
             return 0
-        feels, how = t, "ambient"
-        if t >= 27 and rh is not None and rh >= 40:
-            # NWS Rothfusz regression (T in F)
-            tf = t * 9 / 5 + 32
-            hi_f = (
-                -42.379 + 2.04901523 * tf + 10.14333127 * rh
-                - 0.22475541 * tf * rh - 0.00683783 * tf * tf
-                - 0.05481717 * rh * rh + 0.00122874 * tf * tf * rh
-                + 0.00085282 * tf * rh * rh
-                - 0.00000199 * tf * tf * rh * rh
-            )
-            feels = (hi_f - 32) * 5 / 9
-            how = "heat_index"
-        elif t <= 10 and w is not None and w >= 4.8:
-            # wind chill needs wind in km/h
-            v = w * 3.6
-            feels = (13.12 + 0.6215 * t - 11.37 * (v ** 0.16) + 0.3965 * t * (v ** 0.16))
-            how = "wind_chill"
+        feels, how = feels_like(t, w, rh)
         print(f"{station}  temp={t:.1f}C  feels={feels:.1f}C  ({how})"
               f"  wind={w if w is not None else 'n/a'} m/s  rh={rh if rh is not None else 'n/a'}")
         return 0
@@ -205,22 +188,8 @@ def main(argv: list[str]) -> int:
             t, w, rh = num(m.group(2)), num(m.group(3)), num(m.group(4))
             if t is None:
                 continue
-            feels, how = t, "ambient"
-            if t >= 27 and rh is not None and rh >= 40:
-                tf = t * 9 / 5 + 32
-                hi_f = (
-                    -42.379 + 2.04901523 * tf + 10.14333127 * rh
-                    - 0.22475541 * tf * rh - 0.00683783 * tf * tf
-                    - 0.05481717 * rh * rh + 0.00122874 * tf * tf * rh
-                    + 0.00085282 * tf * rh * rh
-                    - 0.00000199 * tf * tf * rh * rh
-                )
-                feels = (hi_f - 32) * 5 / 9
-                how = "HI"
-            elif t <= 10 and w is not None and w >= 4.8:
-                v = w * 3.6
-                feels = 13.12 + 0.6215 * t - 11.37 * (v ** 0.16) + 0.3965 * t * (v ** 0.16)
-                how = "WC"
+            feels, how = feels_like(t, w, rh)
+            how = {"heat_index": "HI", "wind_chill": "WC", "ambient": "ambient"}.get(how, how)
             ws = f"{w:.1f}" if w is not None else "-"
             rs = f"{rh:.0f}" if rh is not None else "-"
             print(f"{st:6} {t:6.1f} {feels:6.1f} {ws:>6} {rs:>6}  {how}")
@@ -342,6 +311,82 @@ def main(argv: list[str]) -> int:
         else:
             fb = "-"
         print(f"{'feels':8} {fa:>8} {fb:>8}")
+        return 0
+    if cmd == "alerts-near":
+        import math
+        if len(argv) < 3:
+            print("usage: alerts-near <lat> <lon> [km]", file=sys.stderr)
+            return 2
+        lat0, lon0 = float(argv[1]), float(argv[2])
+        rad = float(argv[3]) if len(argv) > 3 else 150.0
+        raw = run_sql_capture(
+            "SELECT nat_key, payload_json FROM tsx_observation "
+            "WHERE stream_id='wx.noaa.meta' AND nat_key LIKE '%|name'"
+        )
+        names = []
+        for line in raw.splitlines():
+            if "nat_key=" not in line:
+                continue
+            fields = {}
+            for part in line.strip().strip("()").split(", "):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    fields[k.strip()] = v.strip().strip("'")
+            st = fields.get("nat_key", "").split("|")[1] if "nat_key" in fields else ""
+            info = fields.get("payload_json", "")
+            # station name often like "New York, La Guardia..."
+            city = info.split(",")[0].strip() if info else st
+            if city and city not in ("", "null"):
+                names.append((st, city))
+        # fallback: if no names, use station ids only
+        keys = [st for st, city in names if city and city not in ("null", "None")]
+        print("near", lat0, lon0, "km", rad, "stations_meta", len(keys))
+        # report nearby stations then matching alerts
+        rawc = run_sql_capture(
+            "SELECT nat_key, value FROM tsx_observation "
+            "WHERE stream_id='wx.noaa.meta' AND (nat_key LIKE '%|lat' OR nat_key LIKE '%|lon')"
+        )
+        coords = {}
+        for line in rawc.splitlines():
+            if "nat_key=" not in line:
+                continue
+            fields = {}
+            for part in line.strip().strip("()").split(", "):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    fields[k.strip()] = v.strip().strip("'")
+            nk = fields.get("nat_key", "")
+            if "|lat" in nk:
+                coords.setdefault(nk.split("|")[1], {})["lat"] = float(fields.get("value") or 0)
+            elif "|lon" in nk:
+                coords.setdefault(nk.split("|")[1], {})["lon"] = float(fields.get("value") or 0)
+        def hav(a, b, c, d):
+            r = 6371.0
+            p1, p2 = math.radians(a), math.radians(c)
+            dp = math.radians(c - a)
+            dl = math.radians(d - b)
+            x = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+            return 2 * r * math.asin(math.sqrt(x))
+        near_st = [
+            st for st, c in coords.items()
+            if "lat" in c and "lon" in c and hav(lat0, lon0, c["lat"], c["lon"]) <= rad
+        ]
+        print("stations in radius", near_st[:12])
+        rawa = run_sql_capture(
+            "SELECT ts_utc, value AS sev, payload_json FROM tsx_observation "
+            "WHERE stream_id='wx.noaa.alerts' ORDER BY ts_utc DESC LIMIT 200"
+        )
+        hit = 0
+        for line in rawa.splitlines():
+            if "payload_json=" not in line:
+                continue
+            low = line.lower()
+            if any(st.lower() in low for st in near_st):
+                print(line[:180])
+                hit += 1
+                if hit >= 15:
+                    break
+        print(f"alerts-near matched={hit}")
         return 0
     if cmd == "caps":
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
