@@ -1,37 +1,23 @@
 # tsx critical path
 
-**Goal:** small, measurable demo of acquire → Comdb2 store → replicate → archive with **space caps**, as the foundation of an open “Bloomberg-like” terminal.
+**Last updated:** 2026-10-16 · **Status:** P0–P2 done · wx surface live
 
-## P0 — demo pipeline (this week)
+## Done
+| Track | Tickets |
+|-------|---------|
+| P0 demo pipeline | #1 |
+| P1 replica + archive | #2 #4 #5 #19 |
+| P2 terminal + second stream | #3 |
+| wx stations/metrics/alerts/meta | #6–#9 |
+| wx CLI (feels, now, near, compare, correlate, rollup) | #10–#17 #20 #22 |
+| ops (unified job, NWS retry, health, tests, CI) | #14 #18 #21 #23 #24 #25 |
 
-| # | Work | Status |
-|---|------|--------|
-| P0.1 | Repo scaffold (README, DESIGN, schema, acquire, cap_check) | **done** |
-| P0.2 | Load `sql/schema.sql` on U01 Comdb2 | OPEN |
-| P0.3 | Schedule `acquire/usgs_quakes.py` (day + week backfill) | OPEN |
-| P0.4 | JSONL → `observation` loader | OPEN |
-| P0.5 | Time-series SQL demo (hourly counts / avg mag) | OPEN |
-| P0.6 | `tools/cap_check.sh` wired to cron | OPEN |
+## Live surface
+- **Streams:** eq.usgs · wx.noaa (32 stations) · wx.noaa.alerts · wx.noaa.meta · px.wb.pinksheet · news.bbc
+- **Cron:** `:43` USGS · `:20` wx_hourly · `*/15` alerts · `:17` caps · `27 3` archive
+- **CLI:** `query/tsx_cli.py help` · **Health:** `tools/wx_health.sh` · **Tests:** `make test`
 
-## P1 — replica + archive
-
-| # | Work | Status |
-|---|------|--------|
-| P1.1 | Confirm U02 Comdb2 replica healthy | OPEN |
-| P1.2 | Nightly archive job (export &gt;90d → `coldstore/tsx`) | OPEN |
-| P1.3 | Archive-then-delete under **2 GB active / 20 GB archive** | OPEN |
-| P1.4 | Replay-from-archive test | OPEN |
-
-## P2 — terminal surface
-
-| # | Work | Status |
-|---|------|--------|
-| P2.1 | Views `v_last` / `v_stats` | OPEN |
-| P2.2 | `tsx` CLI query | OPEN |
-| P2.3 | Second stream (e.g. FX or NOAA) proving the catalog model | OPEN |
-
-## Non-goals (v0)
-Market entitlements · trading · live tick UI · multi-region.
-
-## Caps
-See README. **U02 `/tmp` is tmpfs — never stage archives there.**
+## Optional later
+- Historical wx backfill (NWS window limited)
+- Alert→city geocode
+- Grafana / dashboard
