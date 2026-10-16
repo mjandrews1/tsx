@@ -66,3 +66,10 @@ SELECT substr(nat_key, 1, 9) AS station,
 FROM tsx_observation
 WHERE stream_id = 'wx.noaa'
 GROUP BY substr(nat_key, 1, 9), substr(ts_utc, 1, 13);
+
+CREATE VIEW v_stations AS
+SELECT substr(nat_key, 1, 9) AS station,
+       MAX(CASE WHEN nat_key LIKE '%|name' THEN payload_json END) AS info
+FROM tsx_observation
+WHERE stream_id = 'wx.noaa.meta'
+GROUP BY substr(nat_key, 1, 9);

@@ -5,7 +5,7 @@ Usage:
   tsx_cli.py last [stream]
   tsx_cli.py stats
   tsx_cli.py hourly [stream]
-  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py count
+  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py count
   tsx_cli.py sql "SELECT ..."
   tsx_cli.py caps
 """
@@ -82,6 +82,17 @@ def main(argv: list[str]) -> int:
             "SELECT ts_utc, value AS sev, substr(payload_json,1,100) AS info "
             "FROM tsx_observation WHERE stream_id='wx.noaa.alerts' "
             "ORDER BY ts_utc DESC LIMIT 20"
+        )
+    if cmd == "stations":
+        return run_sql("SELECT * FROM v_stations")
+    if cmd == "wxday":
+        station = argv[1] if len(argv) > 1 else "KLGA"
+        return run_sql(
+            "SELECT substr(ts_utc,1,10) AS day, "
+            "MIN(value) AS min_c, AVG(value) AS avg_c, MAX(value) AS max_c "
+            "FROM tsx_observation WHERE stream_id='wx.noaa' "
+            f"AND nat_key LIKE 'noaa|{station}|2%' "
+            "GROUP BY substr(ts_utc,1,10) ORDER BY day DESC LIMIT 7"
         )
     if cmd == "caps":
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
