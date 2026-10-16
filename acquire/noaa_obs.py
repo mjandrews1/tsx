@@ -103,6 +103,24 @@ def main() -> int:
                     pev["title"] = f"{st} pressure"
                     fh.write(json.dumps(pev, separators=(",", ":")) + "\n")
                     n += 1
+                rh = (p.get("relativeHumidity") or {}).get("value")
+                dew = (p.get("dewpoint") or {}).get("value")
+                if rh is not None:
+                    hev = dict(ev)
+                    hev["nat_key"] = f"noaa|{st}|h|{ts}"
+                    hev["value"] = float(rh)
+                    hev["unit"] = "%"
+                    hev["title"] = f"{st} humidity"
+                    fh.write(json.dumps(hev, separators=(",", ":")) + "\n")
+                    n += 1
+                if dew is not None:
+                    dev = dict(ev)
+                    dev["nat_key"] = f"noaa|{st}|d|{ts}"
+                    dev["value"] = float(dew)
+                    dev["unit"] = "C"
+                    dev["title"] = f"{st} dewpoint"
+                    fh.write(json.dumps(dev, separators=(",", ":")) + "\n")
+                    n += 1
     print(json.dumps({
         "stream": "wx.noaa", "staged": n, "errors": err,
         "stations": STATIONS, "file": str(out), "at": now,

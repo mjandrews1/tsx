@@ -66,7 +66,7 @@ def main(argv: list[str]) -> int:
         station = argv[1] if len(argv) > 1 else ""
         if station:
             return run_sql(
-                "SELECT hour_utc, avg_c, avg_wind_mps, avg_hpa, n FROM v_hourly_wx "
+                "SELECT hour_utc, avg_c, avg_wind_mps, avg_hpa, avg_rh, avg_dew_c, n FROM v_hourly_wx "
                 f"WHERE station='noaa|{station}' ORDER BY hour_utc DESC LIMIT 24"
             )
         return run_sql("SELECT * FROM v_hourly_wx ORDER BY hour_utc DESC LIMIT 30")
