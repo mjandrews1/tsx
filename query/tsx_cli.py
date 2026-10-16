@@ -5,7 +5,7 @@ Usage:
   tsx_cli.py last [stream]
   tsx_cli.py stats
   tsx_cli.py hourly [stream]
-  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py wxnow\n  tsx_cli.py export <stream> [file]\n  tsx_cli.py near <lat> <lon>\n  tsx_cli.py compare ST1 ST2\n  tsx_cli.py alerts-near <lat> <lon> [km]\n  tsx_cli.py alerts [--severe] [area]\n  tsx_cli.py count
+  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py wxnow\n  tsx_cli.py export <stream> [file]\n  tsx_cli.py export-all [dir]\n  tsx_cli.py near <lat> <lon>\n  tsx_cli.py compare ST1 ST2\n  tsx_cli.py alerts-near <lat> <lon> [km]\n  tsx_cli.py alerts [--severe] [area]\n  tsx_cli.py count
   tsx_cli.py sql "SELECT ..."
   tsx_cli.py caps
 """
@@ -431,6 +431,25 @@ def main(argv: list[str]) -> int:
         return 0
     if cmd == "help" or cmd == "-h" or cmd == "--help":
         print(__doc__)
+        return 0
+    if cmd == "export-all":
+        outdir = argv[1] if len(argv) > 1 else "."
+        os.makedirs(outdir, exist_ok=True)
+        raw = run_sql_capture("SELECT DISTINCT stream_id FROM tsx_observation")
+        streams = []
+        for line in raw.splitlines():
+            if "stream_id=" in line:
+                streams.append(line.split("stream_id=", 1)[1].strip().strip(")'"))
+        total = 0
+        for st in streams:
+            path = os.path.join(outdir, st + ".csv")
+            rc = os.system(
+                f"{sys.executable} {os.path.abspath(__file__)} export {st} {path} >/dev/null"
+            )
+            if rc == 0:
+                total += 1
+                print("wrote", path)
+        print(f"EXPORT-ALL streams={total} dir={outdir}")
         return 0
     if cmd == "caps":
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
