@@ -85,6 +85,24 @@ def main() -> int:
                 }
                 fh.write(json.dumps(ev, separators=(",", ":")) + "\n")
                 n += 1
+                wind = (p.get("windSpeed") or {}).get("value")
+                press = (p.get("barometricPressure") or {}).get("value")
+                if wind is not None:
+                    wev = dict(ev)
+                    wev["nat_key"] = f"noaa|{st}|w|{ts}"
+                    wev["value"] = float(wind)
+                    wev["unit"] = "m/s"
+                    wev["title"] = f"{st} wind"
+                    fh.write(json.dumps(wev, separators=(",", ":")) + "\n")
+                    n += 1
+                if press is not None:
+                    pev = dict(ev)
+                    pev["nat_key"] = f"noaa|{st}|p|{ts}"
+                    pev["value"] = float(press) / 100.0
+                    pev["unit"] = "hPa"
+                    pev["title"] = f"{st} pressure"
+                    fh.write(json.dumps(pev, separators=(",", ":")) + "\n")
+                    n += 1
     print(json.dumps({
         "stream": "wx.noaa", "staged": n, "errors": err,
         "stations": STATIONS, "file": str(out), "at": now,

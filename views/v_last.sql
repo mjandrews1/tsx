@@ -55,3 +55,14 @@ SELECT substr(nat_key, 1, 12) AS station,
 FROM tsx_observation
 WHERE stream_id = 'wx.noaa'
 GROUP BY substr(nat_key, 1, 12);
+
+CREATE VIEW v_hourly_wx AS
+SELECT substr(nat_key, 1, 9) AS station,
+       substr(ts_utc, 1, 13) AS hour_utc,
+       AVG(CASE WHEN nat_key NOT LIKE '%|w|%' AND nat_key NOT LIKE '%|p|%' THEN value END) AS avg_c,
+       AVG(CASE WHEN nat_key LIKE '%|w|%' THEN value END) AS avg_wind_mps,
+       AVG(CASE WHEN nat_key LIKE '%|p|%' THEN value END) AS avg_hpa,
+       COUNT(*) AS n
+FROM tsx_observation
+WHERE stream_id = 'wx.noaa'
+GROUP BY substr(nat_key, 1, 9), substr(ts_utc, 1, 13);
