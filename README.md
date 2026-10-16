@@ -101,3 +101,13 @@ python3 query/tsx_cli.py wxextremes 24   # min/max C + max wind per station
 
 Alerts every 15 min (U01 crontab):
 `*/15 * * * * PATH=/opt/bb/bin:… bash load/run_alerts.sh`
+
+
+## Unified wx job (tsx#14)
+
+```bash
+bash load/run_wx_hourly.sh     # obs + alerts; station meta at 03Z
+python3 query/tsx_cli.py export wx.noaa /tmp/wx.csv
+```
+
+Cron (U01): hourly `:20` + alerts `*/15`.

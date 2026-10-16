@@ -5,7 +5,7 @@ Usage:
   tsx_cli.py last [stream]
   tsx_cli.py stats
   tsx_cli.py hourly [stream]
-  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py wxnow\n  tsx_cli.py alerts [--severe] [area]\n  tsx_cli.py count
+  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py wxnow\n  tsx_cli.py export <stream> [file]\n  tsx_cli.py alerts [--severe] [area]\n  tsx_cli.py count
   tsx_cli.py sql "SELECT ..."
   tsx_cli.py caps
 """
@@ -221,6 +221,28 @@ def main(argv: list[str]) -> int:
             ws = f"{w:.1f}" if w is not None else "-"
             rs = f"{rh:.0f}" if rh is not None else "-"
             print(f"{st:6} {t:6.1f} {feels:6.1f} {ws:>6} {rs:>6}  {how}")
+        return 0
+    if cmd == "export":
+        stream = argv[1] if len(argv) > 1 else "wx.noaa"
+        path = argv[2] if len(argv) > 2 else f"{stream}.csv"
+        import csv
+        bin_path = CDB2 if os.path.isfile(CDB2) else "cdb2sql"
+        r = subprocess.run(
+            [bin_path, DB, "local",
+             f"SELECT nat_key, ts_utc, value, unit FROM tsx_observation WHERE stream_id='{stream}' ORDER BY ts_utc"],
+            capture_output=True, text=True,
+        )
+        n = 0
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["nat_key", "ts_utc", "value", "unit"])
+            for line in (r.stdout or "").splitlines():
+                # cdb2sql tuples: (nat_key='..', ts_utc='..', value=.., unit='..')
+                if "nat_key=" not in line:
+                    continue
+                w.writerow([line])
+                n += 1
+        print(f"EXPORT {stream} rows={n} file={path}")
         return 0
     if cmd == "caps":
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
