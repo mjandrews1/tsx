@@ -6,9 +6,14 @@ Dedup: skip (stream_id, nat_key) already in tsx_nat_index (31-bit hash PK).
 """
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
+
+_CDB2 = "/opt/bb/bin/cdb2sql"
+if os.path.isdir("/opt/bb/bin"):
+    os.environ["PATH"] = "/opt/bb/bin:" + os.environ.get("PATH", "")
 from pathlib import Path
 
 DB = sys.argv[1] if len(sys.argv) > 1 else "testdb"
@@ -18,12 +23,12 @@ BATCH = 200
 
 
 def q(sql: str):
-    return subprocess.run(["cdb2sql", DB, "local", sql], capture_output=True, text=True)
+    return subprocess.run([_CDB2 if os.path.isfile(_CDB2) else "cdb2sql", DB, "local", sql], capture_output=True, text=True)
 
 
 def run_file(path: Path):
     return subprocess.run(
-        ["cdb2sql", DB, "local", "-f", str(path), "-s"],
+        [_CDB2 if os.path.isfile(_CDB2) else "cdb2sql", DB, "local", "-f", str(path), "-s"],
         capture_output=True,
         text=True,
     )
