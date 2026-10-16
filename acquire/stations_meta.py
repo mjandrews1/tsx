@@ -42,8 +42,12 @@ def main() -> int:
                 continue
             p = fc.get("properties") or {}
             name = (p.get("name") or st)[:80]
+            geom = (fc.get("geometry") or {}).get("coordinates") or [None, None]
             loc = (p.get("location") or {}).get("coordinates") or [None, None]
-            lon, lat = loc[0], loc[1]
+            lon, lat = (geom[0] if geom else loc[0]), (geom[1] if geom else loc[1])
+            if lon is None or lat is None:
+                # fallback: some payloads only have geometry
+                print(f"WARN {st}: no coords", file=sys.stderr)
             base = {
                 "stream_id": "wx.noaa.meta",
                 "ts_utc": now,

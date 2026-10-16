@@ -5,7 +5,7 @@ Usage:
   tsx_cli.py last [stream]
   tsx_cli.py stats
   tsx_cli.py hourly [stream]
-  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py wxnow\n  tsx_cli.py export <stream> [file]\n  tsx_cli.py alerts [--severe] [area]\n  tsx_cli.py count
+  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py wxnow\n  tsx_cli.py export <stream> [file]\n  tsx_cli.py near <lat> <lon>\n  tsx_cli.py alerts [--severe] [area]\n  tsx_cli.py count
   tsx_cli.py sql "SELECT ..."
   tsx_cli.py caps
 """
@@ -237,12 +237,67 @@ def main(argv: list[str]) -> int:
             w = csv.writer(fh)
             w.writerow(["nat_key", "ts_utc", "value", "unit"])
             for line in (r.stdout or "").splitlines():
-                # cdb2sql tuples: (nat_key='..', ts_utc='..', value=.., unit='..')
                 if "nat_key=" not in line:
                     continue
-                w.writerow([line])
+                fields = {}
+                for part in line.strip().strip("()").split(", "):
+                    if "=" not in part:
+                        continue
+                    k, v = part.split("=", 1)
+                    fields[k.strip()] = v.strip().strip("'")
+                if "nat_key" not in fields:
+                    continue
+                w.writerow([
+                    fields.get("nat_key", ""),
+                    fields.get("ts_utc", ""),
+                    fields.get("value", ""),
+                    fields.get("unit", ""),
+                ])
                 n += 1
         print(f"EXPORT {stream} rows={n} file={path}")
+        return 0
+    if cmd == "near":
+        import math
+        if len(argv) < 3:
+            print("usage: near <lat> <lon>", file=sys.stderr)
+            return 2
+        lat0, lon0 = float(argv[1]), float(argv[2])
+        raw = run_sql_capture(
+            "SELECT nat_key, value FROM tsx_observation "
+            "WHERE stream_id='wx.noaa.meta' AND (nat_key LIKE '%|lat' OR nat_key LIKE '%|lon')"
+        )
+        coords = {}
+        for line in raw.splitlines():
+            if "nat_key=" not in line:
+                continue
+            fields = {}
+            for part in line.strip().strip("()").split(", "):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    fields[k.strip()] = v.strip().strip("'")
+            nk = fields.get("nat_key", "")
+            if "|lat" in nk:
+                coords.setdefault(nk.split("|")[1], {})["lat"] = float(fields.get("value") or 0)
+            elif "|lon" in nk:
+                coords.setdefault(nk.split("|")[1], {})["lon"] = float(fields.get("value") or 0)
+        def hav(a, b, c, d):
+            R = 6371.0
+            p1, p2 = math.radians(a), math.radians(c)
+            dp = math.radians(c - a)
+            dl = math.radians(d - b)
+            x = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+            return 2 * R * math.asin(math.sqrt(x))
+        rows = []
+        for st, c in coords.items():
+            if "lat" not in c or "lon" not in c:
+                continue
+            rows.append((hav(lat0, lon0, c["lat"], c["lon"]), st, c["lat"], c["lon"]))
+        if not coords:
+            print("no station coords in wx.noaa.meta", file=sys.stderr)
+        rows.sort()
+        print(f"{'ST':6} {'km':>8} {'lat':>8} {'lon':>8}")
+        for d, st, la, lo in rows[:10]:
+            print(f"{st:6} {d:8.1f} {la:8.3f} {lo:8.3f}")
         return 0
     if cmd == "caps":
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
