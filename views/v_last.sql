@@ -44,3 +44,14 @@ SELECT stream_id, code, title FROM tsx_series;
 
 CREATE VIEW v_stream AS
 SELECT stream_id, title, grain FROM tsx_stream;
+
+CREATE VIEW v_stats_wx AS
+SELECT substr(nat_key, 1, 12) AS station,
+       COUNT(*) AS n,
+       MAX(ts_utc) AS last_ts,
+       AVG(value) AS avg_c,
+       MIN(value) AS min_c,
+       MAX(value) AS max_c
+FROM tsx_observation
+WHERE stream_id = 'wx.noaa'
+GROUP BY substr(nat_key, 1, 12);

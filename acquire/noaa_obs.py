@@ -14,8 +14,24 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-# A few CONUS + AK/HI coverage points (NWS station IDs)
-STATIONS = ["KLGA", "KSFO", "KORD", "KSEA", "KATL", "PHNL"]
+# CONUS + AK/HI + regional coverage (NWS station IDs) — tsx#6
+STATIONS = [
+    # northeast
+    "KLGA", "KBOS", "KPHL", "KDCA", "KBWI",
+    # midwest
+    "KORD", "KMSP", "KDET", "KCLE", "KMCI",
+    # southeast
+    "KATL", "KMCO", "KMIA", "KRDU", "KBNA",
+    # south / plains
+    "KDFW", "KIAH", "KOKC", "KMCI", "KSTL",
+    # mountain / southwest
+    "KDEN", "KPHX", "KABQ", "KSLC", "KLAS",
+    # west / pacific
+    "KSFO", "KLAX", "KSEA", "KPDX", "KSAN", "PHNL",
+    # alaska
+    "PAFA", "PANC",
+]
+STATIONS = list(dict.fromkeys(STATIONS))
 UA = "tsx-geodata/0.1 (+tsx research; contact: mark@local)"
 FEED = "https://api.weather.gov/stations/{st}/observations?limit=16"
 

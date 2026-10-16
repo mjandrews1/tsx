@@ -5,7 +5,7 @@ Usage:
   tsx_cli.py last [stream]
   tsx_cli.py stats
   tsx_cli.py hourly [stream]
-  tsx_cli.py count
+  tsx_cli.py wx [station]\n  tsx_cli.py count
   tsx_cli.py sql "SELECT ..."
   tsx_cli.py caps
 """
@@ -53,6 +53,15 @@ def main(argv: list[str]) -> int:
         return run_sql("SELECT COUNT(*) FROM tsx_observation")
     if cmd == "sql" and len(argv) > 1:
         return run_sql(argv[1])
+    if cmd == "wx":
+        station = argv[1] if len(argv) > 1 else ""
+        if station:
+            return run_sql(
+                "SELECT nat_key, ts_utc, value, unit FROM tsx_observation "
+                f"WHERE stream_id='wx.noaa' AND nat_key LIKE 'noaa|{station}|%' "
+                "ORDER BY ts_utc DESC LIMIT 5"
+            )
+        return run_sql("SELECT * FROM v_stats_wx")
     if cmd == "caps":
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return subprocess.call(["bash", os.path.join(root, "tools", "cap_check.sh")])
