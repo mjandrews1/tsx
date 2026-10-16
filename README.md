@@ -51,3 +51,9 @@ tools/cap_check.sh
 
 ## License
 Open source (add LICENSE when publishing first release). Data from **USGS** (public domain / attribution as required).
+
+## Archive / replay (tsx#4 #5)
+
+- Nightly `tools/archive_cdb2.py testdb 90 $HOME/coldstore/tsx` (cron `27 3 * * *`)
+- `tools/replay_archive.py --verify DIR` — count gzip rows
+- U01/U02 Comdb2 `testdb` counts match (replica); coldstore holds >90d rows
