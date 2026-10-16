@@ -91,3 +91,13 @@ python3 query/tsx_cli.py alerts Flood
 ```
 
 Optional cron: `*/15 * * * * bash /home/mark/tsx/load/run_alerts.sh >> /home/mark/tsx/load.log 2>&1`
+
+
+## wx extremes + alerts cron (tsx#10)
+
+```bash
+python3 query/tsx_cli.py wxextremes 24   # min/max C + max wind per station
+```
+
+Alerts every 15 min (U01 crontab):
+`*/15 * * * * PATH=/opt/bb/bin:… bash load/run_alerts.sh`

@@ -5,7 +5,7 @@ Usage:
   tsx_cli.py last [stream]
   tsx_cli.py stats
   tsx_cli.py hourly [stream]
-  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py count
+  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py count
   tsx_cli.py sql "SELECT ..."
   tsx_cli.py caps
 """
@@ -93,6 +93,23 @@ def main(argv: list[str]) -> int:
             "FROM tsx_observation WHERE stream_id='wx.noaa' "
             f"AND nat_key LIKE 'noaa|{station}|2%' "
             "GROUP BY substr(ts_utc,1,10) ORDER BY day DESC LIMIT 7"
+        )
+    if cmd == "wxextremes":
+        from datetime import datetime, timedelta, timezone
+        hours = argv[1] if len(argv) > 1 else "24"
+        if not str(hours).isdigit():
+            hours = "24"
+        cut = (datetime.now(timezone.utc) - timedelta(hours=int(hours))).strftime(
+            "%Y-%m-%dT%H:%M:%S"
+        )
+        return run_sql(
+            "SELECT substr(nat_key,1,9) AS station, "
+            "MIN(CASE WHEN nat_key NOT LIKE '%|w|%' AND nat_key NOT LIKE '%|p|%' THEN value END) AS min_c, "
+            "MAX(CASE WHEN nat_key NOT LIKE '%|w|%' AND nat_key NOT LIKE '%|p|%' THEN value END) AS max_c, "
+            "MAX(CASE WHEN nat_key LIKE '%|w|%' THEN value END) AS max_wind_mps "
+            "FROM tsx_observation WHERE stream_id='wx.noaa' "
+            f"AND ts_utc >= '{cut}' "
+            "GROUP BY substr(nat_key,1,9) ORDER BY station"
         )
     if cmd == "caps":
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
