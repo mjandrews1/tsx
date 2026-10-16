@@ -75,7 +75,7 @@ def main(argv: list[str]) -> int:
         if area:
             return run_sql(
                 "SELECT ts_utc, value AS sev, substr(payload_json,1,100) AS info FROM tsx_observation "
-                f"WHERE stream_id='wx.noaa.alerts' AND place LIKE '%{area}%' "
+                f"WHERE stream_id='wx.noaa.alerts' AND payload_json LIKE '%{area}%' "
                 "ORDER BY ts_utc DESC LIMIT 20"
             )
         return run_sql(
