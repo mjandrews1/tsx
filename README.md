@@ -57,3 +57,16 @@ Open source (add LICENSE when publishing first release). Data from **USGS** (pub
 - Nightly `tools/archive_cdb2.py testdb 90 $HOME/coldstore/tsx` (cron `27 3 * * *`)
 - `tools/replay_archive.py --verify DIR` — count gzip rows
 - U01/U02 Comdb2 `testdb` counts match (replica); coldstore holds >90d rows
+
+
+## Terminal surface (tsx#3)
+
+```bash
+tools/apply_views.sh testdb   # v_last, v_stats, v_stats_hourly, v_stream, v_series
+python3 query/tsx_cli.py stats
+python3 query/tsx_cli.py last eq
+python3 query/tsx_cli.py hourly eq.usgs
+python3 query/tsx_cli.py sql "SELECT stream_id, COUNT(*) FROM tsx_observation GROUP BY stream_id"
+```
+
+Second stream **wx.noaa** (plus px.wb.pinksheet, news.bbc) validates the catalog model.
