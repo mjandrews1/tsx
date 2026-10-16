@@ -5,7 +5,7 @@ Usage:
   tsx_cli.py last [stream]
   tsx_cli.py stats
   tsx_cli.py hourly [stream]
-  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py count
+  tsx_cli.py wx [station]\n  tsx_cli.py wxhourly [station]\n  tsx_cli.py alerts [area]\n  tsx_cli.py stations\n  tsx_cli.py wxday [station]\n  tsx_cli.py wxextremes [hours]\n  tsx_cli.py wxfeels [station]\n  tsx_cli.py wxnow\n  tsx_cli.py alerts [--severe] [area]\n  tsx_cli.py count
   tsx_cli.py sql "SELECT ..."
   tsx_cli.py caps
 """
@@ -77,17 +77,21 @@ def main(argv: list[str]) -> int:
             )
         return run_sql("SELECT * FROM v_hourly_wx ORDER BY hour_utc DESC LIMIT 30")
     if cmd == "alerts":
-        area = argv[1] if len(argv) > 1 else ""
+        rest = argv[1:]
+        severe = "--severe" in rest
+        rest = [x for x in rest if x != "--severe"]
+        area = rest[0] if rest else ""
+        sev_sql = " AND value >= 4" if severe else ""
         if area:
             return run_sql(
                 "SELECT ts_utc, value AS sev, substr(payload_json,1,100) AS info FROM tsx_observation "
-                f"WHERE stream_id='wx.noaa.alerts' AND payload_json LIKE '%{area}%' "
-                "ORDER BY ts_utc DESC LIMIT 20"
+                f"WHERE stream_id='wx.noaa.alerts' AND payload_json LIKE '%{area}%'"
+                + sev_sql + " ORDER BY ts_utc DESC LIMIT 20"
             )
         return run_sql(
             "SELECT ts_utc, value AS sev, substr(payload_json,1,100) AS info "
-            "FROM tsx_observation WHERE stream_id='wx.noaa.alerts' "
-            "ORDER BY ts_utc DESC LIMIT 20"
+            "FROM tsx_observation WHERE stream_id='wx.noaa.alerts'"
+            + sev_sql + " ORDER BY ts_utc DESC LIMIT 20"
         )
     if cmd == "stations":
         return run_sql("SELECT * FROM v_stations")
@@ -167,6 +171,56 @@ def main(argv: list[str]) -> int:
             how = "wind_chill"
         print(f"{station}  temp={t:.1f}C  feels={feels:.1f}C  ({how})"
               f"  wind={w if w is not None else 'n/a'} m/s  rh={rh if rh is not None else 'n/a'}")
+        return 0
+    if cmd == "wxnow":
+        import re
+        raw = run_sql_capture(
+            "SELECT substr(nat_key,1,9) AS station, "
+            "MAX(CASE WHEN nat_key NOT LIKE '%|w|%' AND nat_key NOT LIKE '%|p|%' "
+            "AND nat_key NOT LIKE '%|h|%' AND nat_key NOT LIKE '%|d|%' THEN value END) AS t_c, "
+            "MAX(CASE WHEN nat_key LIKE '%|w|%' THEN value END) AS wind_mps, "
+            "MAX(CASE WHEN nat_key LIKE '%|h|%' THEN value END) AS rh "
+            "FROM tsx_observation WHERE stream_id='wx.noaa' "
+            "GROUP BY substr(nat_key,1,9) ORDER BY station"
+        )
+        print(f"{'ST':6} {'T(C)':>6} {'feels':>6} {'wind':>6} {'RH':>6}  formula")
+        for line in raw.splitlines():
+            m = re.search(
+                r"station='([^']+)', t_c=([^,]+), wind_mps=([^,]+), rh=([^\)]+)", line
+            )
+            if not m:
+                continue
+            st = m.group(1).replace("noaa|", "")
+            def num(x):
+                x = x.strip().strip("'")
+                if x in ("NULL", "null", ""):
+                    return None
+                try:
+                    return float(x)
+                except ValueError:
+                    return None
+            t, w, rh = num(m.group(2)), num(m.group(3)), num(m.group(4))
+            if t is None:
+                continue
+            feels, how = t, "ambient"
+            if t >= 27 and rh is not None and rh >= 40:
+                tf = t * 9 / 5 + 32
+                hi_f = (
+                    -42.379 + 2.04901523 * tf + 10.14333127 * rh
+                    - 0.22475541 * tf * rh - 0.00683783 * tf * tf
+                    - 0.05481717 * rh * rh + 0.00122874 * tf * tf * rh
+                    + 0.00085282 * tf * rh * rh
+                    - 0.00000199 * tf * tf * rh * rh
+                )
+                feels = (hi_f - 32) * 5 / 9
+                how = "HI"
+            elif t <= 10 and w is not None and w >= 4.8:
+                v = w * 3.6
+                feels = 13.12 + 0.6215 * t - 11.37 * (v ** 0.16) + 0.3965 * t * (v ** 0.16)
+                how = "WC"
+            ws = f"{w:.1f}" if w is not None else "-"
+            rs = f"{rh:.0f}" if rh is not None else "-"
+            print(f"{st:6} {t:6.1f} {feels:6.1f} {ws:>6} {rs:>6}  {how}")
         return 0
     if cmd == "caps":
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
