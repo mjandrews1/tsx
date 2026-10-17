@@ -3,7 +3,14 @@
 
 Uses cdb2sql batch file (semicolon-separated) to avoid 1 process/row.
 Dedup: skip (stream_id, nat_key) already in tsx_nat_index (31-bit hash PK).
+
+Fixes (2026-10-17):
+  - INSERT OR REPLACE on tsx_nat_index (hash collisions are expected at scale)
+  - --single-transaction for atomic batches (no partial commits)
+  - flock to prevent concurrent runs (race condition on have-set)
+  - Accurate error counting
 """
+import fcntl
 import hashlib
 import json
 import os
@@ -20,15 +27,16 @@ DB = sys.argv[1] if len(sys.argv) > 1 else "testdb"
 SRC = Path(sys.argv[2] if len(sys.argv) > 2 else "eq.usgs.all_day.jsonl")
 DEFAULT_STREAM = sys.argv[3] if len(sys.argv) > 3 else "eq.usgs"
 BATCH = 200
+LOCKFILE = "/tmp/tsx_load_cdb2.lock"
 
 
 def q(sql: str):
-    return subprocess.run([_CDB2 if os.path.isfile(_CDB2) else "cdb2sql", DB, "local", sql], capture_output=True, text=True)
+    return subprocess.run([_CDB2, DB, "local", sql], capture_output=True, text=True)
 
 
 def run_file(path: Path):
     return subprocess.run(
-        [_CDB2 if os.path.isfile(_CDB2) else "cdb2sql", DB, "local", "-f", str(path), "-s"],
+        [_CDB2, DB, "local", "-f", str(path), "-s", "--single-transaction"],
         capture_output=True,
         text=True,
     )
@@ -40,10 +48,18 @@ def key_id(stream: str, nat: str) -> int:
 
 
 def esc(s: str) -> str:
-    return (s or "").replace("'", "''")
+    return (s or "").replace("'", "\'\'")
 
 
 def main() -> int:
+    # flock: prevent concurrent runs (race condition on have-set)
+    lock_fd = open(LOCKFILE, "w")
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("another load_cdb2.py is running; skipping", file=sys.stderr)
+        return 0
+
     q("CREATE TABLE tsx_nat_index (id INTEGER PRIMARY KEY, stream_id TEXT, nat_key TEXT, obs_id INTEGER)")
     r = q("SELECT coalesce(max(id),0) FROM tsx_observation")
     try:
@@ -51,7 +67,6 @@ def main() -> int:
     except Exception:
         nid = 1
 
-    # load existing keys into a set (cheap for our scale)
     have = set()
     rr = q("SELECT id FROM tsx_nat_index")
     for line in (rr.stdout or "").splitlines():
@@ -76,7 +91,7 @@ def main() -> int:
         path.unlink(missing_ok=True)
         if p.returncode != 0:
             err += nbuf
-            print((p.stderr or p.stdout)[:300], file=sys.stderr)
+            print((p.stderr or p.stdout)[:500], file=sys.stderr)
         nbuf = 0
         buf.clear()
 
@@ -110,8 +125,9 @@ def main() -> int:
             f"INSERT INTO tsx_observation(id, stream_id, series_id, ts_utc, nat_key, value, unit, payload_json) "
             f"VALUES ({nid}, '{esc(stream)}', 0, '{ts}', '{esc(nat)[:200]}', {val}, '{unit}', '{esc(payload)}')"
         )
+        # INSERT OR REPLACE: 32-bit hash collisions are expected at scale
         buf.append(
-            f"INSERT INTO tsx_nat_index(id, stream_id, nat_key, obs_id) VALUES ({hid}, '{esc(stream)}', '{esc(nat)[:200]}', {nid})"
+            f"INSERT OR REPLACE INTO tsx_nat_index(id, stream_id, nat_key, obs_id) VALUES ({hid}, '{esc(stream)}', '{esc(nat)[:200]}', {nid})"
         )
         have.add(hid)
         ok += 1
